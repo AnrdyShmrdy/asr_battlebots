@@ -163,7 +163,8 @@ include_directories(
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
 catkin_install_python(PROGRAMS
-  scripts/run_robot.py
+  scripts/run_player_robot.py
+  scripts/run_enemy_robot.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
