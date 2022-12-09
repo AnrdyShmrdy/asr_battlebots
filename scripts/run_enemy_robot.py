@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import absolute_import, division, print_function
+import random
 import time
 import rospy
 import math
@@ -10,6 +11,15 @@ from std_msgs.msg import Int32
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
+#Angle, Index, and Range notes for laserscan ranges:
+#The front laser is the laser that points directly ahead of the front of the robot
+#laser at index 90 is likely the front laser. 
+#The moment the front of the robot touches a wall, the forward laser indicates a range of 0.5
+#Values in range go from 0 to 179
+#laser at index 0 is to the right, or clockwise from the front laser
+#laser at index 90 is the front laser, which faces directly ahead of the robot
+#laser at index 179 is to the left, or counter-clockwise from the front laser
+
 def clamp(value, low=-1.0, high=1.0):
     return min(max(value, low), high)
 class EnemyRobot:
@@ -26,41 +36,43 @@ class EnemyRobot:
         self.is_initialized = False
         self.x_vec_sum = 0
         self.y_vec_sum = 0
-        self.tau = math.radians(90) #90 degrees = 1.57 radians
-        self.middle_angle = -self.tau
-        self.angle_offset = None #will be set once node is initialized
-        self.front_angle = None #will be set once node is initialized
-        self.front_angle = None #will be set once node is initialized
-        self.rear_angle = None #will be set once node is initialized
-        self.middle_index = None #will be set once node is initialized
-        self.front_index = None #will be set once node is initialized
-        self.rear_index = None #will be set once node is initialized 
-        self.guard_index = None #will be set once node is initialized
-        self.window = None #will be set once node is initialized
         self.angle_increment = None #will be set once node is initialized
         self.angle_min = None #will be set once node is initialized
+        self.angle_max = None #will be set once node is initialized
         self.range_max = None #will be set once node is initialized
+        self.range_min = None #will be set once node is initialized
         self.ranges = None #will be set once node is initialized
+        self.regions = None #will be set once node is initialized
         self.healthfinder_msg = BoundingBox3d()
+        self.state = 0
+        self.state_dict_ = {
+            0: 'find the wall',
+            1: 'turn left',
+            2: 'follow the wall',
+        }
+        self.state_description = ''
         self.center_pos_y = 0.0
         self.size_y = 0.0
         self.time = time.time()
+    def set_regions(self):
+        self.regions = {
+        'right':  min(self.ranges[0:35]),
+        'fright': min(self.ranges[36:71]),
+        'front':  min(self.ranges[72:107]),
+        'fleft':  min(self.ranges[108:143]),
+        'left':   min(self.ranges[144:179]),
+        }
     def initialize_runtime_variables(self, msg):
         #variables to set once the node is initialized
         #The reason these variables cannot be set in the constructor is because
         #their values can only be determined after the node is initialized
         self.angle_increment = msg.angle_increment
         self.angle_min = msg.angle_min
+        self.angle_max = msg.angle_max
         self.range_max = msg.range_max
+        self.range_min = msg.range_min
         self.ranges = msg.ranges
-        self.angle_offset = abs(self.angle_min + self.tau)    # angle stuff
-        self.front_angle = (-self.tau + self.angle_offset)
-        self.rear_angle = (-self.tau - self.angle_offset)
-        self.middle_index = self.get_index_from_angle(self.middle_angle) # convert angles to index
-        self.front_index = self.get_index_from_angle(self.front_angle)
-        self.rear_index = self.get_index_from_angle(self.rear_angle)
-        self.guard_index = int(len(self.ranges) / 2)
-        self.window = int((math.radians(45)) / self.angle_increment)
+        self.set_regions()
     def healthfinder_callback(self, msg):
         self.time = time.time()
         self.healthfinder_msg = msg
@@ -69,8 +81,13 @@ class EnemyRobot:
     def scan_callback(self, msg):
         if not self.is_initialized:
             self.initialize_runtime_variables(msg)
+            print("Variables initialized!")
+            self.display_values()
             self.is_initialized = True
-        self.ranges = msg.ranges
+        else:
+            self.ranges = msg.ranges
+            self.set_regions()
+            
     def odom_callback(self, msg):
         pass
     def canshoot_callback(self, msg):
@@ -99,7 +116,7 @@ class EnemyRobot:
         self.get_vec_sums()
         final_angle = math.atan2(self.y_vec_sum,self.x_vec_sum)
         cmdTwist = Twist()
-        cmdTwist.linear.x = self.get_front_laser() / self.range_max
+        cmdTwist.linear.x = 2 * self.get_front_laser() / self.range_max
         cmdTwist.angular.z = final_angle
         msg = self.healthfinder_msg
         self.center_pos_y = msg.center.position.y
@@ -111,59 +128,123 @@ class EnemyRobot:
             print(time.time() - t0)
             cmdTwist.angular.z = self.center_pos_y / 10 * -1
         self.cmd_vel_pub.publish(cmdTwist)
-    def right_wall_follow(self):
-        ranges = self.ranges    # quick reference to the ranges
-        vector = [0, 0.8]       # the movement vector. it starts biased forward
-        middle_range = ranges[self.middle_index]     # get the ranges at the indices
-        front_range = ranges[self.front_index]
-        rear_range = ranges[self.rear_index]
-        guard_range = ranges[self.guard_index]
-        for i in range(self.guard_index - self.window, self.guard_index + self.window):
-            guard_range = min(ranges[i], guard_range)
-        if min(guard_range, middle_range, front_range, rear_range) < 0.35:  # turn left and slow down if the wall is too close (use smallest sensor)
-            vector[0] = 0.5 * 2	
-            vector[1] /= 3.0
-        elif min(guard_range, middle_range, front_range, rear_range) > 0.45:  # turn right and slow down if the wall is too far (use smallest sensor)
-            vector[0] = -0.5 * 2
-            vector[1] /= 2.0
-        if rear_range > front_range:  # turn slightly if not straight with the wall
-            vector[0] += 0.2 * 2
+    def display_state(self):
+        d = 1
+        
+        if self.regions['front'] > d and self.regions['fleft'] > d and self.regions['fright'] > d:
+            self.state_description = 'state 0 - nothing'
+            self.state = 0
+        elif self.regions['front'] < d and self.regions['fleft'] > d and self.regions['fright'] > d:
+            self.state_description = 'state 1 - front'
+            self.state = 1
+        elif self.regions['front'] > d and self.regions['fleft'] > d and self.regions['fright'] < d:
+            self.state_description = 'state 2 - fright'
+            self.state = 2
+        elif self.regions['front'] > d and self.regions['fleft'] < d and self.regions['fright'] > d:
+            self.state_description = 'state 3 - fleft'
+            self.state = 3
+        elif self.regions['front'] < d and self.regions['fleft'] > d and self.regions['fright'] < d:
+            self.state_description = 'state 4 - front and fright'
+            self.state = 4
+        elif self.regions['front'] < d and self.regions['fleft'] < d and self.regions['fright'] > d:
+            self.state_description = 'state 5 - front and fleft'
+            self.state = 5
+        elif self.regions['front'] < d and self.regions['fleft'] < d and self.regions['fright'] < d:
+            self.state_description = 'state 6 - front and fleft and fright'
+            self.state = 6
+        elif self.regions['front'] > d and self.regions['fleft'] < d and self.regions['fright'] < d:
+            self.state_description = 'state 7 - fleft and fright'
+            self.state = 7
         else:
-            vector[0] += -0.2 * 2
-        if min(guard_range, front_range) < 0.35:  # reverse direction if the guard or front sensor see something
-            vector[1] *= -1.0
-        angle = clamp(vector[0]/1.0)  # limit speed and rotation
-        speed = clamp(vector[1]/1.0)
-        twist_cmd = Twist()
-        twist_cmd.linear.x = speed
-        twist_cmd.angular.z = max(min(angle, 1.0), -1.0)
-        msg = self.healthfinder_msg
-        self.center_pos_y = msg.center.position.y
-        self.size_y = msg.size.y
-        t0 = time.time()
-        if self.center_pos_y < self.size_y and -(self.time - t0) < 1.0:
-            print("center pos y: " + str(self.center_pos_y))
-            print("size y: " + str(self.size_y))
-            twist_cmd.angular.z = self.center_pos_y / 10 * -1
-        self.cmd_vel_pub.publish(twist_cmd)
-        # print("center pos y: " + str(self.center_pos_y))
-        # print("size y: " + str(self.size_y))
-        self.rate.sleep()
+            self.state_description = 'unknown state'
+            rospy.loginfo(self.regions)
+    def display_values(self):
+        print("self.angle_increment: ", self.angle_increment)
+        print("self.angle_min: ", self.angle_min)
+        print("self.angle_max: ", self.angle_max)
+        print("self.range_max: ", self.range_max)
+        print("self.range_min: ", self.range_min)
+        print("no of elements in scan ranges: ", int(len(self.ranges)))
+        print("self.regions: ", self.regions)
+    def find_wall(self):
+        msg = Twist()
+        msg.linear.x = 0.5
+        msg.angular.z = -0.5
+        return msg
+    
+    def turn_left(self):
+        msg = Twist()
+        msg.angular.z = 0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_back_left(self):
+        msg = Twist()
+        msg.linear.x = -0.5
+        msg.angular.z = -0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_back_right(self):
+        msg = Twist()
+        msg.linear.x = -0.5
+        msg.angular.z = 0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_front_left(self):
+        msg = Twist()
+        msg.linear.x = 0.5
+        msg.angular.z = 0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_front_right(self):
+        msg = Twist()
+        msg.linear.x = 0.5
+        msg.angular.z = -0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_back(self):
+        msg = Twist()
+        msg.linear.x = -0.5
+        self.cmd_vel_pub.publish(msg)
+    def move_forward(self):
+        msg = Twist()
+        msg.linear.x = 0.5
+        self.cmd_vel_pub.publish(msg)
+    def follow_the_wall(self):
+        msg = Twist()
+        msg.linear.x = 0.5
+        self.cmd_vel_pub.publish(msg)
+    
     def main_loop(self):
-        for i in range(10):
-            twist_cmd = Twist()
-            twist_cmd.linear.x = -0.5
-            self.cmd_vel_pub.publish(twist_cmd)
-            self.rate.sleep()
         while not rospy.is_shutdown():
-            ranges = self.ranges
-            min_range = ranges[0]
-            for i in range(0, int(len(ranges) / 2)):
-                min_range = min(min_range, ranges[i])
-            if min_range < 1.0:
-                self.right_wall_follow()
-            elif min_range > 2.0:
+            msg = Twist()
+            self.display_state()
+            print("self.state: ", self.state)
+            if self.state == 0:
                 self.safe_forward()
+            if self.state == 1:
+                if random.randrange(0, 1) == 1:
+                    self.move_back_left()
+                else:
+                    self.move_back_right()
+            if self.state == 2:
+                self.move_front_left()
+            elif self.state == 3:
+                self.move_back_left()
+            elif self.state == 4:
+                self.move_back_right()
+            elif self.state == 5:
+                    self.move_back_right()
+            elif self.state == 6:
+                if random.randrange(0, 1) == 1:
+                    self.move_back_left()
+                    rospy.Rate(2).sleep()
+                else:
+                    self.move_back_right()
+                    rospy.Rate(2).sleep()
+            elif self.state == 7:
+                if random.randrange(0, 1) == 1:
+                    self.move_back_left()
+                    rospy.Rate(2).sleep()
+                else:
+                    self.move_back_right()
+                    rospy.Rate(2).sleep()
+            
+            self.rate.sleep()
         
 def main(args=None):
     rospy.init_node("EnemyRobot",anonymous=True)
