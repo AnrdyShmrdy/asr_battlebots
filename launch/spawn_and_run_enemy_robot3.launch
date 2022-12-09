@@ -1,0 +1,4 @@
+<launch>
+    <node name="spawn_enemy_node3" pkg="unitysim" type="spawnrobot.py" launch-prefix="$(find asr_battlebots)/launch/call_unity_service_enemy3.sh"/>
+    <node name="run_enemy_robot3" pkg="asr_battlebots" type="run_enemy_robot3.py" output="screen"/>
+</launch>
