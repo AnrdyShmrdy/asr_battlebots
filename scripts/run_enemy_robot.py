@@ -19,9 +19,6 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 #laser at index 0 is to the right, or clockwise from the front laser
 #laser at index 90 is the front laser, which faces directly ahead of the robot
 #laser at index 179 is to the left, or counter-clockwise from the front laser
-
-def clamp(value, low=-1.0, high=1.0):
-    return min(max(value, low), high)
 class EnemyRobot:
     def __init__(self):
         self.cmd_vel_pub = rospy.Publisher("/enemy/cmd_vel", Twist, queue_size=10)
@@ -45,11 +42,6 @@ class EnemyRobot:
         self.regions = None #will be set once node is initialized
         self.healthfinder_msg = BoundingBox3d()
         self.state = 0
-        self.state_dict_ = {
-            0: 'find the wall',
-            1: 'turn left',
-            2: 'follow the wall',
-        }
         self.state_description = ''
         self.center_pos_y = 0.0
         self.size_y = 0.0
@@ -73,6 +65,7 @@ class EnemyRobot:
         self.range_min = msg.range_min
         self.ranges = msg.ranges
         self.set_regions()
+        self.set_current_state()
     def healthfinder_callback(self, msg):
         self.time = time.time()
         self.healthfinder_msg = msg
@@ -87,7 +80,7 @@ class EnemyRobot:
         else:
             self.ranges = msg.ranges
             self.set_regions()
-            
+            self.set_current_state()   
     def odom_callback(self, msg):
         pass
     def canshoot_callback(self, msg):
@@ -128,9 +121,8 @@ class EnemyRobot:
             print(time.time() - t0)
             cmdTwist.angular.z = self.center_pos_y / 10 * -1
         self.cmd_vel_pub.publish(cmdTwist)
-    def display_state(self):
+    def set_current_state(self):
         d = 1
-        
         if self.regions['front'] > d and self.regions['fleft'] > d and self.regions['fright'] > d:
             self.state_description = 'state 0 - nothing'
             self.state = 0
@@ -157,7 +149,6 @@ class EnemyRobot:
             self.state = 7
         else:
             self.state_description = 'unknown state'
-            rospy.loginfo(self.regions)
     def display_values(self):
         print("self.angle_increment: ", self.angle_increment)
         print("self.angle_min: ", self.angle_min)
@@ -166,12 +157,6 @@ class EnemyRobot:
         print("self.range_min: ", self.range_min)
         print("no of elements in scan ranges: ", int(len(self.ranges)))
         print("self.regions: ", self.regions)
-    def find_wall(self):
-        msg = Twist()
-        msg.linear.x = 0.5
-        msg.angular.z = -0.5
-        return msg
-    
     def turn_left(self):
         msg = Twist()
         msg.angular.z = 0.5
@@ -208,12 +193,8 @@ class EnemyRobot:
         msg = Twist()
         msg.linear.x = 0.5
         self.cmd_vel_pub.publish(msg)
-    
     def main_loop(self):
         while not rospy.is_shutdown():
-            msg = Twist()
-            self.display_state()
-            print("self.state: ", self.state)
             if self.state == 0:
                 self.safe_forward()
             if self.state == 1:
@@ -243,7 +224,6 @@ class EnemyRobot:
                 else:
                     self.move_back_right()
                     rospy.Rate(2).sleep()
-            
             self.rate.sleep()
         
 def main(args=None):
