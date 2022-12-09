@@ -42,6 +42,9 @@ class Robot:
         self.regions = None #will be set once node is initialized
         self.healthfinder_msg = BoundingBox3d()
         self.state = 0
+        self.state_linear_speed = 2.0 #linear movement speed when in various states. Does not apply to safe_forward
+        self.state_angular_speed = 2.0 #angular movement speed when in various states. Does not apply to safe_forward
+        self.state_distance = 1 #distance to compare with the minimum distance of each region in order to determine current state
         self.state_description = ''
         self.center_pos_y = 0.0
         self.size_y = 0.0
@@ -109,7 +112,7 @@ class Robot:
         self.get_vec_sums()
         final_angle = math.atan2(self.y_vec_sum,self.x_vec_sum)
         cmdTwist = Twist()
-        cmdTwist.linear.x = 2 * self.get_front_laser() / self.range_max
+        cmdTwist.linear.x = 10 * self.get_front_laser() / self.range_max
         cmdTwist.angular.z = final_angle
         msg = self.healthfinder_msg
         self.center_pos_y = msg.center.position.y
@@ -119,32 +122,31 @@ class Robot:
             print("center pos y: " + str(self.center_pos_y))
             print("size y: " + str(self.size_y))
             print(time.time() - t0)
-            cmdTwist.angular.z = self.center_pos_y / 10 * -1
+            cmdTwist.angular.z = self.center_pos_y * -1
         self.cmd_vel_pub.publish(cmdTwist)
     def set_current_state(self):
-        d = 1
-        if self.regions['front'] > d and self.regions['fleft'] > d and self.regions['fright'] > d:
+        if self.regions['front'] > self.state_distance and self.regions['fleft'] > self.state_distance and self.regions['fright'] > self.state_distance:
             self.state_description = 'state 0 - nothing'
             self.state = 0
-        elif self.regions['front'] < d and self.regions['fleft'] > d and self.regions['fright'] > d:
+        elif self.regions['front'] < self.state_distance and self.regions['fleft'] > self.state_distance and self.regions['fright'] > self.state_distance:
             self.state_description = 'state 1 - front'
             self.state = 1
-        elif self.regions['front'] > d and self.regions['fleft'] > d and self.regions['fright'] < d:
+        elif self.regions['front'] > self.state_distance and self.regions['fleft'] > self.state_distance and self.regions['fright'] < self.state_distance:
             self.state_description = 'state 2 - fright'
             self.state = 2
-        elif self.regions['front'] > d and self.regions['fleft'] < d and self.regions['fright'] > d:
+        elif self.regions['front'] > self.state_distance and self.regions['fleft'] < self.state_distance and self.regions['fright'] > self.state_distance:
             self.state_description = 'state 3 - fleft'
             self.state = 3
-        elif self.regions['front'] < d and self.regions['fleft'] > d and self.regions['fright'] < d:
+        elif self.regions['front'] < self.state_distance and self.regions['fleft'] > self.state_distance and self.regions['fright'] < self.state_distance:
             self.state_description = 'state 4 - front and fright'
             self.state = 4
-        elif self.regions['front'] < d and self.regions['fleft'] < d and self.regions['fright'] > d:
+        elif self.regions['front'] < self.state_distance and self.regions['fleft'] < self.state_distance and self.regions['fright'] > self.state_distance:
             self.state_description = 'state 5 - front and fleft'
             self.state = 5
-        elif self.regions['front'] < d and self.regions['fleft'] < d and self.regions['fright'] < d:
+        elif self.regions['front'] < self.state_distance and self.regions['fleft'] < self.state_distance and self.regions['fright'] < self.state_distance:
             self.state_description = 'state 6 - front and fleft and fright'
             self.state = 6
-        elif self.regions['front'] > d and self.regions['fleft'] < d and self.regions['fright'] < d:
+        elif self.regions['front'] > self.state_distance and self.regions['fleft'] < self.state_distance and self.regions['fright'] < self.state_distance:
             self.state_description = 'state 7 - fleft and fright'
             self.state = 7
         else:
@@ -159,39 +161,39 @@ class Robot:
         print("self.regions: ", self.regions)
     def turn_left(self):
         msg = Twist()
-        msg.angular.z = 0.5
+        msg.angular.z = self.state_angular_speed
         self.cmd_vel_pub.publish(msg)
     def move_back_left(self):
         msg = Twist()
-        msg.linear.x = -0.5
-        msg.angular.z = -0.5
+        msg.linear.x = -self.state_linear_speed
+        msg.angular.z = -self.state_angular_speed
         self.cmd_vel_pub.publish(msg)
     def move_back_right(self):
         msg = Twist()
-        msg.linear.x = -0.5
-        msg.angular.z = 0.5
+        msg.linear.x = -self.state_linear_speed
+        msg.angular.z = self.state_angular_speed
         self.cmd_vel_pub.publish(msg)
     def move_front_left(self):
         msg = Twist()
-        msg.linear.x = 0.5
-        msg.angular.z = 0.5
+        msg.linear.x = self.state_linear_speed
+        msg.angular.z = self.state_angular_speed
         self.cmd_vel_pub.publish(msg)
     def move_front_right(self):
         msg = Twist()
-        msg.linear.x = 0.5
-        msg.angular.z = -0.5
+        msg.linear.x = self.state_linear_speed
+        msg.angular.z = -self.state_angular_speed
         self.cmd_vel_pub.publish(msg)
     def move_back(self):
         msg = Twist()
-        msg.linear.x = -0.5
+        msg.linear.x = -self.state_linear_speed
         self.cmd_vel_pub.publish(msg)
     def move_forward(self):
         msg = Twist()
-        msg.linear.x = 0.5
+        msg.linear.x = self.state_linear_speed
         self.cmd_vel_pub.publish(msg)
     def follow_the_wall(self):
         msg = Twist()
-        msg.linear.x = 0.5
+        msg.linear.x = self.state_linear_speed
         self.cmd_vel_pub.publish(msg)
     def main_loop(self):
         while not rospy.is_shutdown():
