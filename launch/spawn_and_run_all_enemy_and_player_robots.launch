@@ -1,0 +1,10 @@
+<launch>
+    <node name="spawn_enemy_node" pkg="unitysim" type="spawnrobot.py" launch-prefix="$(find asr_battlebots)/launch/call_unity_service_enemy.sh"/>
+    <node name="spawn_enemy_node2" pkg="unitysim" type="spawnrobot.py" launch-prefix="$(find asr_battlebots)/launch/call_unity_service_enemy2.sh"/>
+    <node name="spawn_enemy_node3" pkg="unitysim" type="spawnrobot.py" launch-prefix="$(find asr_battlebots)/launch/call_unity_service_enemy3.sh"/>
+    <node name="spawn_player_node" pkg="unitysim" type="spawnrobot.py" launch-prefix="$(find asr_battlebots)/launch/call_unity_service_player.sh"/>
+    <node name="run_enemy_robot" pkg="asr_battlebots" type="run_enemy_robot.py" output="screen"/>
+    <node name="run_enemy_robot2" pkg="asr_battlebots" type="run_enemy_robot2.py" output="screen"/>
+    <node name="run_enemy_robot3" pkg="asr_battlebots" type="run_enemy_robot3.py" output="screen"/>
+    <node name="run_player_robot" pkg="asr_battlebots" type="run_player_robot.py" output="screen"/>
+</launch>

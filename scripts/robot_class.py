@@ -19,6 +19,9 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler
 #laser at index 0 is to the right, or clockwise from the front laser
 #laser at index 90 is the front laser, which faces directly ahead of the robot
 #laser at index 179 is to the left, or counter-clockwise from the front laser
+#In boundingBox3D, center.position.y represents how far the blob/player is from forward relative to the robot
+#if center.position.y is 0 then the blob/player is right in front of your robot
+#size.y and size.z are identical. They tell you how big the blob/player is on the screen. The bigger it is, the closer it is
 class Robot:
     def __init__(self, robot_name):
         self.cmd_vel_pub = rospy.Publisher("/" + str(robot_name) + "/cmd_vel", Twist, queue_size=10)
@@ -30,6 +33,7 @@ class Robot:
         self.canshoot_sub = rospy.Subscriber("/" + str(robot_name) + "canshoot", Int32, self.canshoot_callback)
         self.hp_sub = rospy.Subscriber("/" + str(robot_name) + "/hp", Int32, self.hp_callback)
         self.rate = rospy.Rate(10)
+        self.blob_sighted = False
         self.is_initialized = False
         self.x_vec_sum = 0
         self.y_vec_sum = 0
@@ -73,6 +77,18 @@ class Robot:
         self.time = time.time()
         self.healthfinder_msg = msg
     def playerfinder_callback(self, msg):
+        center_pos_y = msg.center.position.y
+        size_y = msg.size.y
+        fire_msg = String()
+        cmdTwist = Twist()
+        fire_msg.data = "Fire"
+        self.cannon_pub.publish(fire_msg)
+        if center_pos_y < size_y and not self.blob_sighted:
+            # print("center pos y: " + str(self.center_pos_y))
+            # print("size y: " + str(self.size_y))
+            # print(time.time() - t0)
+            cmdTwist.angular.z = center_pos_y * -1
+            self.cmd_vel_pub.publish(cmdTwist)
         pass
     def scan_callback(self, msg):
         if not self.is_initialized:
@@ -119,10 +135,13 @@ class Robot:
         self.size_y = msg.size.y
         t0 = time.time()
         if self.center_pos_y < self.size_y and -(self.time - t0) < 1.0:
-            print("center pos y: " + str(self.center_pos_y))
-            print("size y: " + str(self.size_y))
-            print(time.time() - t0)
+            self.blob_sighted = True
+            # print("center pos y: " + str(self.center_pos_y))
+            # print("size y: " + str(self.size_y))
+            # print(time.time() - t0)
             cmdTwist.angular.z = self.center_pos_y * -1
+        else:
+            self.blob_sighted = False
         self.cmd_vel_pub.publish(cmdTwist)
     def set_current_state(self):
         if self.regions['front'] > self.state_distance and self.regions['fleft'] > self.state_distance and self.regions['fright'] > self.state_distance:
