@@ -46,8 +46,8 @@ class Robot:
         self.regions = None #will be set once node is initialized
         self.healthfinder_msg = BoundingBox3d()
         self.state = 0
-        self.state_linear_speed = 2.0 #linear movement speed when in various states. Does not apply to safe_forward
-        self.state_angular_speed = 2.0 #angular movement speed when in various states. Does not apply to safe_forward
+        self.state_linear_speed = 3.0 #linear movement speed when in various states. Does not apply to safe_forward
+        self.state_angular_speed = 3.0 #angular movement speed when in various states. Does not apply to safe_forward
         self.state_distance = 1 #distance to compare with the minimum distance of each region in order to determine current state
         self.state_description = ''
         self.center_pos_y = 0.0

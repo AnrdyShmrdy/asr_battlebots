@@ -165,6 +165,8 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/run_player_robot.py
   scripts/run_enemy_robot.py
+  scripts/run_enemy_robot2.py
+  scripts/run_enemy_robot3.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
